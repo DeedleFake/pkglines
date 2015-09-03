@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/build"
 	"os"
+	"sync"
 )
 
 type Package struct {
@@ -12,7 +13,26 @@ type Package struct {
 	Lines int
 }
 
-func countLines(linesC chan Package, pkg *build.Package) {
+type CheckDone struct {
+	Name string
+	Ret  chan<- bool
+}
+
+func plural(num int, str, p string) string {
+	if num == 1 {
+		return str
+	}
+
+	return str + p
+}
+
+var (
+	wg        sync.WaitGroup
+	checkDone = make(chan *CheckDone)
+)
+
+func countLines(linesC chan<- Package, pkg *build.Package) {
+	defer wg.Done()
 }
 
 func main() {
@@ -27,14 +47,27 @@ func main() {
 		os.Exit(2)
 	}
 
-	linesC := make(chan Package, flag.NArg())
+	linesC := make(chan Package)
 
-	done := make(map[string]struct{}, flag.NArg())
+	go func() {
+		done := make(map[string]struct{}, flag.NArg())
+		for check := range checkDone {
+			_, ok := done[check.Name]
+			check.Ret <- ok
+
+			done[check.Name] = struct{}{}
+		}
+	}()
+
+	checkC := make(chan bool)
 	for _, ipath := range flag.Args() {
-		if _, ok := done[ipath]; ok {
+		checkDone <- &CheckDone{
+			Name: ipath,
+			Ret:  checkC,
+		}
+		if <-checkC {
 			continue
 		}
-		done[ipath] = struct{}{}
 
 		pkg, err := build.Import(ipath, ".", 0)
 		if err != nil {
@@ -42,6 +75,19 @@ func main() {
 			os.Exit(1)
 		}
 
+		wg.Add(1)
 		go countLines(linesC, pkg)
 	}
+
+	go func() {
+		wg.Wait()
+		close(linesC)
+	}()
+
+	var total int
+	for pkg := range linesC {
+		fmt.Printf("%v: %v %v\n", pkg.Name, pkg.Lines, plural(pkg.Lines, "line", "s"))
+		total += pkg.Lines
+	}
+	fmt.Printf("%v %v total.", total, plural(total, "line", "s"))
 }
