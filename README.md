@@ -18,11 +18,11 @@ Prints the number of lines of code in pkglines. pkglines has no
 non-standard library dependencies, so this only prints pkglines's size.
 
 ```bash
-> pkglines pkglines
+> pkglines github.com/DeedleFake/pkglines
 ```
 
 Prints the number of lines of code in pkglines and its dependencies.
 
 ```bash
-> pkglines -std pkglines
+> pkglines -std github.com/DeedleFake/pkglines
 ```
