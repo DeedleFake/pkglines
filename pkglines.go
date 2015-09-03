@@ -1,20 +1,22 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"go/build"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 )
 
 type Package struct {
 	Name  string
-	Lines int
+	Lines int64
 }
 
-func plural(num int, str, p string) string {
+func plural(num int64, str, p string) string {
 	if num == 1 {
 		return str
 	}
@@ -45,6 +47,9 @@ func countLines(linesC chan<- Package, pkg *build.Package) {
 		go countLines(linesC, pkg)
 	}
 
+	var lines int64
+	var wg sync.WaitGroup
+
 	for _, file := range pkg.GoFiles {
 		path := filepath.Join(pkg.Dir, file)
 
@@ -58,7 +63,19 @@ func countLines(linesC chan<- Package, pkg *build.Package) {
 				os.Exit(1)
 			}
 			defer file.Close()
+
+			s := bufio.NewScanner(file)
+			for s.Scan() {
+				atomic.AddInt64(&lines, 1)
+			}
 		}(path)
+	}
+
+	wg.Wait()
+
+	linesC <- Package{
+		Name:  pkg.ImportPath,
+		Lines: lines,
 	}
 }
 
@@ -96,10 +113,10 @@ func main() {
 		close(linesC)
 	}()
 
-	var total int
+	var total int64
 	for pkg := range linesC {
-		fmt.Printf("%v: %v %v\n", pkg.Name, pkg.Lines, plural(pkg.Lines, "line", "s"))
+		fmt.Printf("%v: %v %v.\n", pkg.Name, pkg.Lines, plural(pkg.Lines, "line", "s"))
 		total += pkg.Lines
 	}
-	fmt.Printf("%v %v total.", total, plural(total, "line", "s"))
+	fmt.Printf("%v %v total.\n", total, plural(total, "line", "s"))
 }
