@@ -25,22 +25,22 @@ func plural(num int64, str, p string) string {
 }
 
 var (
-	wg   sync.WaitGroup
-	done = NewDone()
+	wg     sync.WaitGroup
+	filter *Filter
 )
 
 func countLines(linesC chan<- Package, pkg *build.Package) {
 	defer wg.Done()
 
 	for _, ipath := range pkg.Imports {
-		if done.Check(ipath) {
-			continue
-		}
-
 		pkg, err := build.Import(ipath, ".", 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to import %q: %v", ipath, err)
 			os.Exit(1)
+		}
+
+		if filter.Check(pkg) {
+			continue
 		}
 
 		wg.Add(1)
@@ -81,9 +81,11 @@ func countLines(linesC chan<- Package, pkg *build.Package) {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %v [import path] ...\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %v [options] <import path> ...\n", os.Args[0])
 		flag.PrintDefaults()
 	}
+
+	std := flag.Bool("std", false, "Count lines in standard library packages.")
 	flag.Parse()
 
 	if flag.NArg() == 0 {
@@ -92,16 +94,27 @@ func main() {
 	}
 
 	linesC := make(chan Package)
-
-	for _, ipath := range flag.Args() {
-		if done.Check(ipath) {
-			continue
+	filter = NewFilter(func(pkg *build.Package, prev bool) bool {
+		if prev {
+			return true
 		}
 
+		if !*std && pkg.Goroot {
+			return true
+		}
+
+		return false
+	})
+
+	for _, ipath := range flag.Args() {
 		pkg, err := build.Import(ipath, ".", 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to import %q: %v", ipath, err)
 			os.Exit(1)
+		}
+
+		if filter.Check(pkg) {
+			continue
 		}
 
 		wg.Add(1)
@@ -118,5 +131,7 @@ func main() {
 		fmt.Printf("%v: %v %v.\n", pkg.Name, pkg.Lines, plural(pkg.Lines, "line", "s"))
 		total += pkg.Lines
 	}
+
+	fmt.Println()
 	fmt.Printf("%v %v total.\n", total, plural(total, "line", "s"))
 }
