@@ -59,7 +59,7 @@ func countLines(linesC chan<- Package, pkg *build.Package) {
 
 			file, err := os.Open(path)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to open %q: %v", path, err)
+				fmt.Fprintf(os.Stderr, "Failed to open %q: %v\n", path, err)
 				os.Exit(1)
 			}
 			defer file.Close()
@@ -109,7 +109,7 @@ func main() {
 	for _, ipath := range flag.Args() {
 		pkg, err := build.Import(ipath, ".", 0)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to import %q: %v", ipath, err)
+			fmt.Fprintf(os.Stderr, "Failed to import %q: %v\n", ipath, err)
 			os.Exit(1)
 		}
 
@@ -126,12 +126,16 @@ func main() {
 		close(linesC)
 	}()
 
-	var total int64
+	var total, pkgnum int64
 	for pkg := range linesC {
 		fmt.Printf("%v: %v %v.\n", pkg.Name, pkg.Lines, plural(pkg.Lines, "line", "s"))
+
 		total += pkg.Lines
+		pkgnum++
 	}
 
-	fmt.Println()
-	fmt.Printf("%v %v total.\n", total, plural(total, "line", "s"))
+	if pkgnum > 1 {
+		fmt.Println()
+		fmt.Printf("%v %v total.\n", total, plural(total, "line", "s"))
+	}
 }
