@@ -5,17 +5,13 @@ import (
 	"fmt"
 	"go/build"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
 type Package struct {
 	Name  string
 	Lines int
-}
-
-type CheckDone struct {
-	Name string
-	Ret  chan<- bool
 }
 
 func plural(num int, str, p string) string {
@@ -27,12 +23,43 @@ func plural(num int, str, p string) string {
 }
 
 var (
-	wg        sync.WaitGroup
-	checkDone = make(chan *CheckDone)
+	wg   sync.WaitGroup
+	done = NewDone()
 )
 
 func countLines(linesC chan<- Package, pkg *build.Package) {
 	defer wg.Done()
+
+	for _, ipath := range pkg.Imports {
+		if done.Check(ipath) {
+			continue
+		}
+
+		pkg, err := build.Import(ipath, ".", 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to import %q: %v", ipath, err)
+			os.Exit(1)
+		}
+
+		wg.Add(1)
+		go countLines(linesC, pkg)
+	}
+
+	for _, file := range pkg.GoFiles {
+		path := filepath.Join(pkg.Dir, file)
+
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
+
+			file, err := os.Open(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open %q: %v", path, err)
+				os.Exit(1)
+			}
+			defer file.Close()
+		}(path)
+	}
 }
 
 func main() {
@@ -49,23 +76,8 @@ func main() {
 
 	linesC := make(chan Package)
 
-	go func() {
-		done := make(map[string]struct{}, flag.NArg())
-		for check := range checkDone {
-			_, ok := done[check.Name]
-			check.Ret <- ok
-
-			done[check.Name] = struct{}{}
-		}
-	}()
-
-	checkC := make(chan bool)
 	for _, ipath := range flag.Args() {
-		checkDone <- &CheckDone{
-			Name: ipath,
-			Ret:  checkC,
-		}
-		if <-checkC {
+		if done.Check(ipath) {
 			continue
 		}
 
