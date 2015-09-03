@@ -1,0 +1,3 @@
+Don't require an import path. If none is given, the current directory should be used as if it had been specified explicitly.
+
+Make it possible to only count lines in packages that are rooted in the same import path as packages explicitly given on the command line.
